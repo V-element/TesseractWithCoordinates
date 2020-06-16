@@ -15,8 +15,8 @@
 
 <h1>Расшифрованный текст:</h1>
 <h2>>${text}</h2>
-
+<%--
 <p>Оригинал:</p>
-<iframe src="${pageContext.request.contextPath}/resources/static/${file.getOriginalFilename()}" height="800" width="800"></iframe>
+<iframe src="${pageContext.request.contextPath}/resources/static/${file.getOriginalFilename()}" height="800" width="800"></iframe>--%>
 </body>
 </html>

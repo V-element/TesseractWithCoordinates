@@ -9,6 +9,8 @@ import net.sourceforge.tess4j.TesseractException;
 import net.sourceforge.tess4j.util.ImageIOHelper;
 import net.sourceforge.tess4j.util.PdfUtilities;
 import org.apache.commons.io.FilenameUtils;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -39,7 +41,7 @@ public class FileUploadController {
 
     @PostMapping(value = "/upload")
     public RedirectView singleFileUpload(@RequestParam("file") MultipartFile file,
-                                         RedirectAttributes redirectAttributes, Model model) throws IOException, TesseractException {
+                                         RedirectAttributes redirectAttributes, Model model) throws IOException, TesseractException, JSONException {
 
         byte[] bytes = file.getBytes();
         Path path = Paths.get(Objects.requireNonNull(file.getOriginalFilename()));
@@ -80,6 +82,8 @@ public class FileUploadController {
         int level = TessAPI1.TessPageIteratorLevel.RIL_WORD;
         int height = image.getHeight();
 
+        StringBuilder jsonString = new StringBuilder();
+
         do {
             Pointer ptr = TessAPI1.TessResultIteratorGetUTF8Text(ri, level);
             String word = ptr.getString(0);
@@ -94,10 +98,22 @@ public class FileUploadController {
             int top = topB.get();
             int right = rightB.get();
             int bottom = bottomB.get();
-            System.out.println(String.format("%s %d %d %d %d %f", word, left, top, right, bottom, confidence));
+            //System.out.println(String.format("%s %d %d %d %d %f", word, left, top, right, bottom, confidence));
+
+            //Building JSON
+            jsonString.append(new JSONObject()
+                    .put("word", word)
+                    .put("left", left)
+                    .put("top", top)
+                    .put("right", right)
+                    .put("bottom", bottom)
+                    .put("confidence", confidence)
+                    .toString());
+            jsonString.append("\n");
+
         } while (TessAPI1.TessPageIteratorNext(pi, level) == 1);
 
-
+        System.out.println(jsonString);
 
 
 
