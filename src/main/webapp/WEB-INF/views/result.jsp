@@ -13,8 +13,10 @@
 </head>
 <body>
 
-<h1>Расшифрованный текст:</h1>
-<h2>>${text}</h2>
+<%--<h1>Json:</h1>--%>
+<%--<h2>>${text}</h2>--%>
+<p>${jsonString}</p>
+<p>${defaultString}</p>
 <%--
 <p>Оригинал:</p>
 <iframe src="${pageContext.request.contextPath}/resources/static/${file.getOriginalFilename()}" height="800" width="800"></iframe>--%>
