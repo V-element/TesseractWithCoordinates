@@ -3,6 +3,16 @@ package ru.omega;
 import com.lowagie.text.*;
 import com.lowagie.text.Font;
 import com.lowagie.text.pdf.*;
+import com.ochafik.lang.jnaerator.runtime.NativeSize;
+import com.sun.jna.StringArray;
+import com.sun.jna.ptr.PointerByReference;
+import net.sourceforge.tess4j.ITessAPI.*;
+import net.sourceforge.tess4j.TessAPI1;
+import net.sourceforge.tess4j.Tesseract;
+import net.sourceforge.tess4j.Tesseract1;
+import net.sourceforge.tess4j.util.ImageIOHelper;
+import net.sourceforge.tess4j.util.PdfUtilities;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
@@ -15,22 +25,136 @@ import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.PDFTextStripperByArea;
+import org.ghost4j.document.PDFDocument;
 
 
+import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
 public class ExtractBoxedText {
-    public static void main(String[] args) throws IOException, DocumentException {
-        changePdf();
-        //manipulatePdf("C:/temp/eurotext-eng.pdf","C:/temp/eurotext-eng2.pdf");
-        printDataFromPDF();
+
+    private static String filePath;
+    private static StringBuilder cmapString;
+
+    public static void main(String[] args) {
+        if (args.length > 0) {
+            filePath = args[0];
+            String extension = FilenameUtils.getExtension(filePath);
+            if (extension.equals("pdf")) {
+                //Converting PDF to Tiff for Tesseract
+                convertPdfToTiff();
+            }
+
+            //Converting file (tiff, jpg, png, ext.) to PDF with Tesseract
+            convertFileToPDF();
+
+            //Adding CMap to PDF for unicode
+            //addCMapToPdf();
+
+            //getDataFromPdf();
+
+            //printDataFromPDF();
+        }
     }
 
-    public static void printDataFromPDF() {
+    private static void convertPdfToTiff() {
+        try {
+            File tiff = PdfUtilities.convertPdf2Tiff(new File(filePath));
+            filePath = tiff.getPath();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void convertFileToPDF() {
+        TessBaseAPI handle = TessAPI1.TessBaseAPICreate();
+        String datapath = "tessdata";
+        String language = "rus+eng";
+        /*String image = filePath;
+        String output = "capi-test.txt";
+        int set_only_init_params = TessAPI1.FALSE;
+        int oem = TessOcrEngineMode.OEM_DEFAULT;
+        PointerByReference configs = null;
+        int configs_size = 0;
+
+        String[] params = {"load_system_dawg", "tessedit_char_whitelist"};
+        String vals[] = {"F", ""}; //0123456789-.IThisalotfpnex
+        PointerByReference vars_vec = new PointerByReference();
+        vars_vec.setPointer(new StringArray(params));
+        PointerByReference vars_values = new PointerByReference();
+        vars_values.setPointer(new StringArray(vals));
+        NativeSize vars_vec_size = new NativeSize(params.length);
+
+        TessAPI1.TessBaseAPISetOutputName(handle, output);
+
+        int rc = TessAPI1.TessBaseAPIInit4(handle, datapath, language,
+                oem, configs, configs_size, vars_vec, vars_values, vars_vec_size, set_only_init_params);
+
+        if (rc != 0) {
+            TessAPI1.TessBaseAPIDelete(handle);
+            System.out.println("Could not initialize tesseract.");
+            return;
+        }*/
+        BufferedImage image = null;
+        try {
+            image = ImageIO.read(new FileInputStream(new File(filePath)));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        ByteBuffer buf = ImageIOHelper.convertImageData(image);
+
+        int bpp = image.getColorModel().getPixelSize();
+        int bytespp = bpp / 8;
+        int bytespl = (int) Math.ceil(image.getWidth() * bpp / 8.0);
+
+        TessAPI1.TessBaseAPIInit3(handle, datapath, language);
+        TessAPI1.TessBaseAPISetPageSegMode(handle, TessPageSegMode.PSM_AUTO_ONLY);
+        TessAPI1.TessBaseAPISetImage(handle, buf, image.getWidth(), image.getHeight(), bytespp, bytespl);
+        TessAPI1.TessBaseAPISetSourceResolution(handle, 400);
+
+
+        ETEXT_DESC monitor = new ETEXT_DESC();
+        TessAPI1.TessBaseAPIRecognize(handle, monitor);
+        TessResultIterator ri = TessAPI1.TessBaseAPIGetIterator(handle);
+        TessPageIterator pi = TessAPI1.TessResultIteratorGetPageIterator(ri);
+        TessAPI1.TessPageIteratorBegin(pi);
+
+        String outputbase = "C:/temp/outputpdf";
+        TessResultRenderer renderer = TessAPI1.TessHOcrRendererCreate(outputbase);
+        //TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessBoxTextRendererCreate(outputbase));
+        //TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessTextRendererCreate(outputbase));
+        String dataPath = TessAPI1.TessBaseAPIGetDatapath(handle);
+        TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessPDFRendererCreate(outputbase, dataPath, TessAPI1.TRUE));
+        int result = TessAPI1.TessBaseAPIProcessPages(handle, "C:/temp/", null, 0, renderer);
+
+        /*if (result == TessAPI1.FALSE) {
+            System.out.println("Error during processing.");
+            return;
+        }*/
+        while ((renderer = TessAPI1.TessResultRendererNext(renderer)) != null) {
+            String ext = TessAPI1.TessResultRendererExtention(renderer).getString(0);
+            System.out.println(String.format("TessResultRendererExtention: %s\nTessResultRendererTitle: %s\nTessResultRendererImageNum: %d",
+                    ext,
+                    TessAPI1.TessResultRendererTitle(renderer).getString(0),
+                    TessAPI1.TessResultRendererImageNum(renderer)));
+        }
+
+        TessAPI1.TessDeleteResultRenderer(renderer);
+    }
+
+    private static void getDataFromPdf() {
+
+    }
+
+    /*private static void printDataFromPDF() {
 
         try (PDDocument document = PDDocument.load(new File("C:/temp/eurotext-eng2.pdf")) ) {
             for (PDPage page : document.getDocumentCatalog().getPages()) {
@@ -51,10 +175,11 @@ public class ExtractBoxedText {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
+    }*/
 
-    public static void changePdf() {
-        try (PDDocument doc = PDDocument.load(new File("C:/temp/eurotext-eng.pdf")))
+    private static void addCMapToPdf() {
+        //try (PDDocument doc = PDDocument.load(new File(filePath)))
+        try (PDDocument doc = PDDocument.load(new File("C:/temp/outputpdf.pdf")))
         {
             for (int p = 0; p < doc.getNumberOfPages(); ++p)
             {
@@ -68,7 +193,7 @@ public class ExtractBoxedText {
                     {
                         continue;
                     }
-                    // get real name
+                    /*// get real name
                     String fname = font.getName();
                     int plus = fname.indexOf('+');
                     if (plus != -1)
@@ -84,11 +209,37 @@ public class ExtractBoxedText {
                     if (!fname.startsWith("Calibri-Bold"))
                     {
                         //continue;
-                    }
+                    }*/
                     COSStream toUnicodeStream = new COSStream();
                     try (PrintWriter pw = new PrintWriter(toUnicodeStream.createOutputStream(COSName.FLATE_DECODE)))
                     {
-                        // "9.10 Extraction of Text Content" in the PDF 32000 specification
+                        cmapString = new StringBuilder("/CIDInit /ProcSet findresource begin\n" +
+                                "12 dict begin\n" +
+                                "begincmap\n" +
+                                "/CIDSystemInfo\n" +
+                                "<< /Registry (Adobe)\n" +
+                                "/Ordering (UCS) /Supplement 0 >> def\n" +
+                                "/CMapName /Adobe-Identity-UCS def\n" +
+                                "/CMapType 2 def\n" +
+                                "1 begincodespacerange\n" +
+                                "<0000> <FFFF>\n" +
+                                "endcodespacerange\n");
+
+                        for (int i = 32; i <= 191; i++) {
+                            addUnicodeSymbolToCMap(i);
+                        }
+
+                        for (int i = 1040; i <= 1103; i++) {
+                            addUnicodeSymbolToCMap(i);
+                        }
+
+                        addUnicodeSymbolToCMap(8212);
+                        addUnicodeSymbolToCMap(8470);
+
+                        cmapString.append("endcmap CMapName currentdict /CMap defineresource pop end end");
+                        pw.println(cmapString.toString());
+
+                        /*// "9.10 Extraction of Text Content" in the PDF 32000 specification
                         pw.println("/CIDInit /ProcSet findresource begin\n" +
                                 "12 dict begin\n" +
                                 "begincmap\n" +
@@ -452,50 +603,27 @@ public class ExtractBoxedText {
                                 "<2014><2014> 8212\n" + // —
                                 "endbfchar\n" +
                                 "1 beginbfchar\n" +
-                                "<2116><2116> 8470\n" + // №*/
+                                "<2116><2116> 8470\n" + // №
                                 "endbfchar\n" +
-                                "endcmap CMapName currentdict /CMap defineresource pop end end");
+                                "endcmap CMapName currentdict /CMap defineresource pop end end");*/
                     }
                     font.getCOSObject().setItem(COSName.TO_UNICODE, toUnicodeStream);
                 }
             }
-            doc.save("C:/temp/eurotext-eng2.pdf");
+            //doc.save(Files.createTempDirectory("pdf").toString());
+            doc.save("C:/temp/outputpdf.pdf");
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public static void manipulatePdf(String src, String dest) throws IOException, DocumentException {
-        RandomAccessFile raf = new RandomAccessFile(src, "r");
-        byte fontfile[] = new byte[(int)raf.length()];
-        raf.readFully(fontfile);
-        raf.close();
-        // create a new stream for the font file
-        PdfStream stream = new PdfStream(fontfile);
-        stream.flateCompress();
-        stream.put(PdfName.LENGTH1, new PdfNumber(fontfile.length));
-        // create a reader object
-        PdfReader reader = new PdfReader(dest);
-        int n = reader.getXrefSize();
-        PdfObject object;
-        PdfDictionary font;
-        PdfStamper stamper = new PdfStamper(reader, new FileOutputStream("C:/temp/eurotext-eng3.pdf"));
-        PdfName fontname = new PdfName("GlyphLessFont");
-        for (int i = 0; i < n; i++) {
-            object = reader.getPdfObject(i);
-            if (object == null || !object.isDictionary())
-                continue;
-            font = (PdfDictionary)object;
-            if (PdfName.FONTDESCRIPTOR.equals(font.get(PdfName.TYPE))
-                    && fontname.equals(font.get(PdfName.FONTNAME))) {
-                PdfIndirectObject objref = stamper.getWriter().addToBody(stream);
-                font.put(PdfName.FONTFILE, objref.getIndirectReference());
-            }
-        }
-        stamper.close();
-        reader.close();
+    private static void addUnicodeSymbolToCMap(int i) {
+        String hexCode = Integer.toHexString(0x10000 | i).substring(1);
+        String unicode = String.format("%04d", i);
+        cmapString.append("1 beginbfchar\n");
+        cmapString.append("<").append(hexCode).append("><").append(hexCode).append("> ").append(unicode).append(" \n");
+        cmapString.append("endbfchar\n");
     }
-
 
 }
 
