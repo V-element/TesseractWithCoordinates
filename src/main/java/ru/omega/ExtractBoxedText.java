@@ -1,98 +1,266 @@
 package ru.omega;
 
-import com.lowagie.text.*;
-import com.lowagie.text.Font;
-import com.lowagie.text.pdf.*;
+import com.github.jaiimageio.plugins.tiff.BaselineTIFFTagSet;
+import com.github.jaiimageio.plugins.tiff.TIFFDirectory;
+import com.github.jaiimageio.plugins.tiff.TIFFField;
+import com.github.jaiimageio.plugins.tiff.TIFFTag;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.PdfStamper;
 import com.ochafik.lang.jnaerator.runtime.NativeSize;
-import com.sun.jna.StringArray;
-import com.sun.jna.ptr.PointerByReference;
+import net.sourceforge.lept4j.Leptonica1;
+import net.sourceforge.lept4j.Pix;
 import net.sourceforge.tess4j.ITessAPI.*;
 import net.sourceforge.tess4j.TessAPI1;
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.Tesseract1;
-import net.sourceforge.tess4j.util.ImageIOHelper;
-import net.sourceforge.tess4j.util.PdfUtilities;
+import net.sourceforge.tess4j.util.ImageHelper;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.PDResources;
-import org.apache.pdfbox.pdmodel.common.COSObjectable;
 import org.apache.pdfbox.pdmodel.font.PDFont;
-import org.apache.pdfbox.pdmodel.font.PDType0Font;
-import org.apache.pdfbox.text.PDFTextStripper;
-import org.apache.pdfbox.text.PDFTextStripperByArea;
-import org.ghost4j.document.PDFDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 
-
-import javax.imageio.ImageIO;
-import java.awt.*;
-import java.awt.geom.Rectangle2D;
+import javax.imageio.*;
+import javax.imageio.metadata.IIOInvalidTreeException;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.stream.ImageOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.util.List;
-import java.util.Map;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.file.*;
+import java.util.*;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+
+import com.sun.jna.Pointer;
+import com.sun.jna.StringArray;
+import com.sun.jna.ptr.PointerByReference;
 
 public class ExtractBoxedText {
 
-    private static String filePath;
+    private static String filePathImage;
+    private static final String fileNameTxt = "temp";
+    private static String outputPath;
+    private static String filePathPDF;
     private static StringBuilder cmapString;
+    private static final HashMap<String, Double> symbolConfidenceHashMap = new HashMap<>();
+    private static String tessDataPath;
 
     public static void main(String[] args) {
         if (args.length > 0) {
-            filePath = args[0];
-            String extension = FilenameUtils.getExtension(filePath);
-            if (extension.equals("pdf")) {
-                //Converting PDF to Tiff for Tesseract
-                convertPdfToTiff();
+
+            try {
+
+                String extension = FilenameUtils.getExtension(args[0]);
+                outputPath = args[0].substring(0, args[0].lastIndexOf("\\")+1);
+                if (extension.equals("pdf")) {
+                    //Converting PDF to Tiff for Tesseract
+                    filePathPDF = args[0];
+                    convertPdfToTiff();
+                } else {
+                    filePathImage = args[0];
+                }
+
+                //Extracting tessdata to temp directory
+                extractTessdata();
+
+                //Converting file (tiff, jpg, png, etc.) to searchable PDF with Tesseract
+                convertFileToSearchablePDF();
+
+                //Creating symbol's confidence Map
+                getSymbolsConfidenceMap();
+
+                //Removing errors with xref
+                uncompressXRef(filePathPDF,filePathPDF.replace(".pdf","_searchable.pdf"));
+
+                //Adding CMap to PDF for unicode
+                addCMapToPdf();
+
+                //Creating and writing data to XML
+                createAndWriteDataToXml();
+
+                new File(filePathPDF).deleteOnExit();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private static void extractTessdata() throws IOException, URISyntaxException {
+
+        final URL url = ExtractBoxedText.class.getResource("/tessdata");
+        String s = url.getPath();
+        final Path workingDirPath = Files.createTempDirectory("tessdata");
+        final File tempDirectory = workingDirPath.toFile();
+        tessDataPath = tempDirectory.toString() + "\\tessdata\\";
+
+        if (s.contains("jar!")) {
+            // we have a jar file
+            // format: file:/location...jar!...path-in-the-jar
+            // we only want to have location
+            int excl = s.lastIndexOf("!");
+            s = s.substring(0, excl);
+            s = s.substring("file:/".length());
+
+            try (JarFile jf = new JarFile(s)){
+                Enumeration<JarEntry> entries = jf.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry je = entries.nextElement();
+                    String name = je.getName();
+                    if (name.contains("tessdata")) {
+                        if (je.isDirectory()) {
+                            // directory found
+
+                            Path dir = workingDirPath.resolve(name);
+                            Files.createDirectory(dir);
+                        } else {
+                            Path file = workingDirPath.resolve(name);
+                            try (InputStream is = jf.getInputStream(je)) {
+                                Files.copy(is, file, StandardCopyOption.REPLACE_EXISTING);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // debug mode: no jar
+            if (url != null) {
+                try {
+                    final File apps = new File(url.toURI());
+
+                    for (File app : apps.listFiles()) {
+                        FileUtils.copyToDirectory(app, new File(tessDataPath));//tempDirectory);
+                    }
+                } catch (URISyntaxException e) {
+
+                }
+            }
+        }
+        makeVolatile(tempDirectory);
+    }
+
+    private static void makeVolatile(File folder) {
+        folder.deleteOnExit();
+        try {
+            for (File f : folder.listFiles()) {
+                if (f.isDirectory())
+                    makeVolatile(f);
+                else
+                    f.deleteOnExit();
+            }
+        } catch (NullPointerException e) {
+
+        }
+    }
+
+    private static void uncompressXRef(String src, String dest) throws IOException, DocumentException {
+        PdfReader reader = new PdfReader(src);
+        PdfStamper stamper = new PdfStamper(reader, new FileOutputStream(dest));
+        stamper.close();
+        reader.close();
+        new File(filePathPDF).deleteOnExit();
+        filePathPDF = dest;
+    }
+
+    private static void convertPdfToTiff() throws IOException {
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("TIFF").next();
+        File tiff = new File(outputPath + "image.tif");
+        try (ImageOutputStream output = ImageIO.createImageOutputStream(tiff);
+             PDDocument doc = PDDocument.load(new File(filePathPDF))) {
+
+            ImageIO.scanForPlugins();
+            PDFRenderer renderer = new PDFRenderer(doc);
+            int pageCount = doc.getNumberOfPages();
+            BufferedImage[] images = new BufferedImage[pageCount];
+            for (int i = 0; i < pageCount; ++i) {
+                images[i] = renderer.renderImageWithDPI(i, 400, ImageType.RGB);
             }
 
-            //Converting file (tiff, jpg, png, ext.) to PDF with Tesseract
-            convertFileToPDF();
+            writer.setOutput(output);
 
-            //Adding CMap to PDF for unicode
-            //addCMapToPdf();
+            ImageWriteParam params = writer.getDefaultWriteParam();
+            params.setCompressionMode(ImageWriteParam.MODE_DISABLED);
 
-            //getDataFromPdf();
+            writer.prepareWriteSequence(null);
 
-            //printDataFromPDF();
+            for (BufferedImage imageBuf : images) {
+                writer.writeToSequence(new IIOImage(imageBuf, null, createMetadata(writer, params)), params);
+            }
+
+            writer.endWriteSequence();
         }
+        writer.dispose();
+
+        tiff.deleteOnExit();
+        filePathImage = tiff.getPath();
+
     }
 
-    private static void convertPdfToTiff() {
-        try {
-            File tiff = PdfUtilities.convertPdf2Tiff(new File(filePath));
-            filePath = tiff.getPath();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private static IIOMetadata createMetadata(ImageWriter writer, ImageWriteParam writerParams) throws
+            IIOInvalidTreeException
+    {
+        // Get default metadata from writer
+        ImageTypeSpecifier type = ImageTypeSpecifier.createFromBufferedImageType(BufferedImage.TYPE_BYTE_GRAY);
+        IIOMetadata meta = writer.getDefaultImageMetadata(type, writerParams);
+
+        // Convert default metadata to TIFF metadata
+        TIFFDirectory dir = TIFFDirectory.createFromMetadata(meta);
+
+        // Get {X,Y} resolution tags
+        BaselineTIFFTagSet base = BaselineTIFFTagSet.getInstance();
+        TIFFTag tagXRes = base.getTag(BaselineTIFFTagSet.TAG_X_RESOLUTION);
+        TIFFTag tagYRes = base.getTag(BaselineTIFFTagSet.TAG_Y_RESOLUTION);
+
+        // Create {X,Y} resolution fields
+        TIFFField fieldXRes = new TIFFField(tagXRes, TIFFTag.TIFF_RATIONAL, 1, new long[][] { {400, 1 } });
+        TIFFField fieldYRes = new TIFFField(tagYRes, TIFFTag.TIFF_RATIONAL, 1, new long[][] { {400, 1 } });
+
+        // Add {X,Y} resolution fields to TIFFDirectory
+        dir.addTIFFField(fieldXRes);
+        dir.addTIFFField(fieldYRes);
+
+        // Add unit field to TIFFDirectory (change to RESOLUTION_UNIT_CENTIMETER if necessary)
+        dir.addTIFFField(new TIFFField(base.getTag(BaselineTIFFTagSet.TAG_RESOLUTION_UNIT), BaselineTIFFTagSet.RESOLUTION_UNIT_INCH));
+
+        // Return TIFF metadata so it can be picked up by the IIOImage
+        return dir.getAsMetadata();
     }
 
-    private static void convertFileToPDF() {
+    //TODO not used
+    private static void changeFilesProperties() throws IOException {
+
         TessBaseAPI handle = TessAPI1.TessBaseAPICreate();
-        String datapath = "tessdata";
-        String language = "rus+eng";
-        /*String image = filePath;
-        String output = "capi-test.txt";
+        String datapath = tessDataPath;
+        String language = "osd";
+        String image = filePathImage;
         int set_only_init_params = TessAPI1.FALSE;
         int oem = TessOcrEngineMode.OEM_DEFAULT;
         PointerByReference configs = null;
         int configs_size = 0;
 
-        String[] params = {"load_system_dawg", "tessedit_char_whitelist"};
-        String vals[] = {"F", ""}; //0123456789-.IThisalotfpnex
+        String[] params = {"load_system_dawg",
+                "load_freq_dawg",
+                "user_defined_dpi",
+                "language_model_penalty_non_freq_dict_word",
+                "language_model_penalty_non_dict_word",
+                "textord_tabfind_find_tables",
+                "textord_tablefind_recognize_tables"};
+        String[] vals = {"F","F","400","1","1","T","T"};
         PointerByReference vars_vec = new PointerByReference();
         vars_vec.setPointer(new StringArray(params));
         PointerByReference vars_values = new PointerByReference();
         vars_values.setPointer(new StringArray(vals));
         NativeSize vars_vec_size = new NativeSize(params.length);
-
-        TessAPI1.TessBaseAPISetOutputName(handle, output);
 
         int rc = TessAPI1.TessBaseAPIInit4(handle, datapath, language,
                 oem, configs, configs_size, vars_vec, vars_values, vars_vec_size, set_only_init_params);
@@ -101,85 +269,173 @@ public class ExtractBoxedText {
             TessAPI1.TessBaseAPIDelete(handle);
             System.out.println("Could not initialize tesseract.");
             return;
-        }*/
-        BufferedImage image = null;
-        try {
-            image = ImageIO.read(new FileInputStream(new File(filePath)));
-        } catch (IOException e) {
-            e.printStackTrace();
         }
 
-        ByteBuffer buf = ImageIOHelper.convertImageData(image);
+        String outputbase = outputPath + fileNameTxt;
 
-        int bpp = image.getColorModel().getPixelSize();
+        /////
+
+        BufferedImage imagebuf = ImageIO.read(new FileInputStream(new File(image)));
+
+        /*ByteBuffer buf = ImageIOHelper.convertImageData(imagebuf);
+
+        int bpp = imagebuf.getColorModel().getPixelSize();
         int bytespp = bpp / 8;
-        int bytespl = (int) Math.ceil(image.getWidth() * bpp / 8.0);
+        int bytespl = (int) Math.ceil(imagebuf.getWidth() * bytespp);*/
 
-        TessAPI1.TessBaseAPIInit3(handle, datapath, language);
-        TessAPI1.TessBaseAPISetPageSegMode(handle, TessPageSegMode.PSM_AUTO_ONLY);
-        TessAPI1.TessBaseAPISetImage(handle, buf, image.getWidth(), image.getHeight(), bytespp, bytespl);
+        TessAPI1.TessBaseAPISetPageSegMode(handle, TessPageSegMode.PSM_SINGLE_BLOCK);
+
+        Pix pix = Leptonica1.pixRead(image);
+        TessAPI1.TessBaseAPISetImage2(handle, pix);
+        //TessAPI1.TessBaseAPISetImage(handle, buf, imagebuf.getWidth(), imagebuf.getHeight(), bytespp, bytespl);
         TessAPI1.TessBaseAPISetSourceResolution(handle, 400);
+        TessAPI1.TessBaseAPIGetAvailableLanguagesAsVector(handle);
 
+        //Detecting and changing rotation of image
+        IntBuffer orientDegB = IntBuffer.allocate(1);
+        FloatBuffer orientConfB = FloatBuffer.allocate(1);
+        PointerByReference scriptNameB = new PointerByReference();
+        FloatBuffer scriptConfB = FloatBuffer.allocate(1);
+        TessAPI1.TessBaseAPIDetectOrientationScript(handle, orientDegB, orientConfB, scriptNameB, scriptConfB);
+        float angle = orientDegB.get();
+
+        if (angle != 0 && orientConfB.get() > 10) {
+            imagebuf = ImageHelper.rotateImage(imagebuf, angle); // deskew image
+            /*RescaleOp op = new RescaleOp(1.0f, 35, null);
+            op.filter(imagebuf,imagebuf);*/
+            ImageIO.write(imagebuf, "png", new File(image));
+        }
+
+        TessAPI1.TessBaseAPIDelete(handle);
+        filePathPDF = outputbase + ".pdf";
+
+    }
+
+    private static void convertFileToSearchablePDF() {
+
+        TessBaseAPI handle = TessAPI1.TessBaseAPICreate();
+        String datapath = tessDataPath;
+        String language = "rus+eng";
+        String image = filePathImage;
+        int set_only_init_params = TessAPI1.FALSE;
+        int oem = TessOcrEngineMode.OEM_DEFAULT;
+        PointerByReference configs = null;
+        int configs_size = 0;
+
+        String[] params = {"load_system_dawg",
+                "load_freq_dawg",
+                "user_defined_dpi",
+                "textord_tabfind_find_tables",
+                "textord_tablefind_recognize_tables",
+                "tessedit_use_primary_params_model",
+                "textord_debug_tabfind",
+                "tessedit_char_blacklist"};
+
+        String[] vals = {"F","F","400","T","T","T","T","|`\\"};
+        PointerByReference vars_vec = new PointerByReference();
+        vars_vec.setPointer(new StringArray(params));
+        PointerByReference vars_values = new PointerByReference();
+        vars_values.setPointer(new StringArray(vals));
+        NativeSize vars_vec_size = new NativeSize(params.length);
+
+        int rc = TessAPI1.TessBaseAPIInit4(handle, datapath, language,
+                oem, configs, configs_size, vars_vec, vars_values, vars_vec_size, set_only_init_params);
+
+        if (rc != 0) {
+            TessAPI1.TessBaseAPIDelete(handle);
+            System.out.println("Could not initialize tesseract.");
+            return;
+        }
+
+        String outputbase = outputPath + fileNameTxt;
+
+        TessAPI1.TessBaseAPISetPageSegMode(handle, TessPageSegMode.PSM_AUTO_OSD);
+        Pix pix = Leptonica1.pixRead(image);
+        TessAPI1.TessBaseAPISetImage2(handle, pix);
+
+        TessAPI1.TessBaseAPISetSourceResolution(handle, 400);
+        TessAPI1.TessBaseAPIGetAvailableLanguagesAsVector(handle);
+
+        TessResultRenderer renderer = TessAPI1.TessHOcrRendererCreate(outputbase);
+
+        String dataPath = TessAPI1.TessBaseAPIGetDatapath(handle);
+        TessAPI1.TessResultRendererBeginDocument(renderer, outputbase + ".pdf");
+        TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessPDFRendererCreate(outputbase, dataPath, TessAPI1.FALSE));
+        TessAPI1.TessBaseAPIProcessPages(handle, image, null, 0, renderer);
+        TessAPI1.TessResultRendererEndDocument(renderer);
+        TessAPI1.TessDeleteResultRenderer(renderer);
+        TessAPI1.TessBaseAPIDelete(handle);
+        new File(outputbase + ".hocr").deleteOnExit();
+        filePathPDF = outputbase + ".pdf";
+    }
+
+    private static void getSymbolsConfidenceMap() {
+
+        HashMap<Object, ArrayList<Double>> entryHashMap = new HashMap<>();
+
+        TessBaseAPI handle = TessAPI1.TessBaseAPICreate();
+        String datapath = tessDataPath;
+        String language = "rus+eng";
+        String image = filePathImage;
+        int set_only_init_params = TessAPI1.FALSE;
+        int oem = TessOcrEngineMode.OEM_DEFAULT;
+        PointerByReference configs = null;
+        int configs_size = 0;
+
+        String[] params = {"load_system_dawg",
+                "load_freq_dawg",
+                "user_defined_dpi",
+                "language_model_penalty_non_freq_dict_word",
+                "language_model_penalty_non_dict_word",
+                "textord_tabfind_find_tables",
+                "textord_tablefind_recognize_tables"};
+        String[] vals = {"F","F","400","1","1","T","T"};
+        PointerByReference vars_vec = new PointerByReference();
+        vars_vec.setPointer(new StringArray(params));
+        PointerByReference vars_values = new PointerByReference();
+        vars_values.setPointer(new StringArray(vals));
+        NativeSize vars_vec_size = new NativeSize(params.length);
+
+        TessAPI1.TessBaseAPIInit4(handle, datapath, language,
+                oem, configs, configs_size, vars_vec, vars_values, vars_vec_size, set_only_init_params);
+
+        TessAPI1.TessBaseAPISetPageSegMode(handle, TessPageSegMode.PSM_SINGLE_BLOCK);
+        Pix pix = Leptonica1.pixRead(image);
+        TessAPI1.TessBaseAPISetImage2(handle, pix);
+        TessAPI1.TessBaseAPISetSourceResolution(handle, 400);
 
         ETEXT_DESC monitor = new ETEXT_DESC();
         TessAPI1.TessBaseAPIRecognize(handle, monitor);
         TessResultIterator ri = TessAPI1.TessBaseAPIGetIterator(handle);
         TessPageIterator pi = TessAPI1.TessResultIteratorGetPageIterator(ri);
         TessAPI1.TessPageIteratorBegin(pi);
+        int level = TessPageIteratorLevel.RIL_SYMBOL;
 
-        String outputbase = "C:/temp/outputpdf";
-        TessResultRenderer renderer = TessAPI1.TessHOcrRendererCreate(outputbase);
-        //TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessBoxTextRendererCreate(outputbase));
-        //TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessTextRendererCreate(outputbase));
-        String dataPath = TessAPI1.TessBaseAPIGetDatapath(handle);
-        TessAPI1.TessResultRendererInsert(renderer, TessAPI1.TessPDFRendererCreate(outputbase, dataPath, TessAPI1.TRUE));
-        int result = TessAPI1.TessBaseAPIProcessPages(handle, "C:/temp/", null, 0, renderer);
+        do {
+            Pointer ptr = TessAPI1.TessResultIteratorGetUTF8Text(ri, level);
+            String word = ptr.getString(0);
+            TessAPI1.TessDeleteText(ptr);
+            double confidence = TessAPI1.TessResultIteratorConfidence(ri, level);
+            ArrayList<Double> confidences = entryHashMap.getOrDefault(word, new ArrayList<>());
+            confidences.add(confidence);
+            entryHashMap.put(word,confidences);
+        } while (TessAPI1.TessPageIteratorNext(pi, level) == 1);
 
-        /*if (result == TessAPI1.FALSE) {
-            System.out.println("Error during processing.");
-            return;
-        }*/
-        while ((renderer = TessAPI1.TessResultRendererNext(renderer)) != null) {
-            String ext = TessAPI1.TessResultRendererExtention(renderer).getString(0);
-            System.out.println(String.format("TessResultRendererExtention: %s\nTessResultRendererTitle: %s\nTessResultRendererImageNum: %d",
-                    ext,
-                    TessAPI1.TessResultRendererTitle(renderer).getString(0),
-                    TessAPI1.TessResultRendererImageNum(renderer)));
-        }
-
-        TessAPI1.TessDeleteResultRenderer(renderer);
-    }
-
-    private static void getDataFromPdf() {
-
-    }
-
-    /*private static void printDataFromPDF() {
-
-        try (PDDocument document = PDDocument.load(new File("C:/temp/eurotext-eng2.pdf")) ) {
-            for (PDPage page : document.getDocumentCatalog().getPages()) {
-                PdfBoxFinder boxFinder = new PdfBoxFinder(page);
-                boxFinder.processPage(page);
-                PDFTextStripperByArea stripperByArea = new PDFTextStripperByArea();
-                for (Map.Entry<String, Rectangle2D> entry : boxFinder.getRegions().entrySet()) {
-                    stripperByArea.addRegion(entry.getKey(), entry.getValue());
-                }
-
-                stripperByArea.extractRegions(page);
-                List<String> names = stripperByArea.getRegions();
-                names.sort(null);
-                for (String name : names) {
-                    System.out.printf("[%s] %s\n", name, stripperByArea.getTextForRegion(name));
-                }
+        for (Map.Entry entry: entryHashMap.entrySet()) {
+            double sumConfidence = 0;
+            int count = 0;
+            for (Double f: (ArrayList<Double>) entry.getValue()) {
+                sumConfidence += f;
+                count++;
             }
-        } catch (IOException e) {
-            e.printStackTrace();
+            symbolConfidenceHashMap.put((String) entry.getKey(), count == 0 ? 0 : (sumConfidence / count));
         }
-    }*/
+        TessAPI1.TessBaseAPIDelete(handle);
+    }
 
-    private static void addCMapToPdf() {
+    private static void addCMapToPdf() throws IOException {
         //try (PDDocument doc = PDDocument.load(new File(filePath)))
-        try (PDDocument doc = PDDocument.load(new File("C:/temp/outputpdf.pdf")))
+        try (PDDocument doc = PDDocument.load(new File(filePathPDF)))
         {
             for (int p = 0; p < doc.getNumberOfPages(); ++p)
             {
@@ -229,12 +485,13 @@ public class ExtractBoxedText {
                             addUnicodeSymbolToCMap(i);
                         }
 
-                        for (int i = 1040; i <= 1103; i++) {
+                        for (int i = 1025; i <= 1105; i++) {
                             addUnicodeSymbolToCMap(i);
                         }
 
-                        addUnicodeSymbolToCMap(8212);
-                        addUnicodeSymbolToCMap(8470);
+                        for (int i = 8200; i <= 8500; i++) {
+                            addUnicodeSymbolToCMap(i);
+                        }
 
                         cmapString.append("endcmap CMapName currentdict /CMap defineresource pop end end");
                         pw.println(cmapString.toString());
@@ -607,22 +864,32 @@ public class ExtractBoxedText {
                                 "endbfchar\n" +
                                 "endcmap CMapName currentdict /CMap defineresource pop end end");*/
                     }
+
                     font.getCOSObject().setItem(COSName.TO_UNICODE, toUnicodeStream);
                 }
             }
-            //doc.save(Files.createTempDirectory("pdf").toString());
-            doc.save("C:/temp/outputpdf.pdf");
-        } catch (IOException e) {
-            e.printStackTrace();
+
+            doc.save(filePathPDF);
         }
     }
 
     private static void addUnicodeSymbolToCMap(int i) {
         String hexCode = Integer.toHexString(0x10000 | i).substring(1);
-        String unicode = String.format("%04d", i);
+        String unicode;
+        if (i>9999) {
+            unicode = String.format("%05d", i);
+        } else {
+            unicode = String.format("%04d", i);
+        }
         cmapString.append("1 beginbfchar\n");
         cmapString.append("<").append(hexCode).append("><").append(hexCode).append("> ").append(unicode).append(" \n");
         cmapString.append("endbfchar\n");
+    }
+
+    private static void createAndWriteDataToXml() throws IOException {
+        XmlParser xmlParser = new XmlParser(filePathPDF);
+        xmlParser.setSymbolConfidenceHashMap(symbolConfidenceHashMap);
+        xmlParser.writeDataFromPdf();
     }
 
 }

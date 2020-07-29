@@ -1,0 +1,45 @@
+Manifest-Version: 1.0
+Main-Class: ru.omega.ExtractBoxedText
+Class-Path: xmlgraphics-commons-1.4.jar spring-core-5.2.6.RELEASE.jar co
+ mmons-cli-1.4.jar jboss-logging-3.4.1.Final.jar log4j-over-slf4j-1.7.30
+ .jar jts-core-1.15.0.jar jbig2-imageio-3.0.3.jar opencv-3.4.2-2.jar spr
+ ing-context-5.2.7.RELEASE.jar bcmail-jdk15on-1.62.jar log4j-1.2.17.jar 
+ spring-boot-starter-web-services-2.3.0.RELEASE.jar xmpcore-6.0.6.jar sp
+ ring-webmvc-5.2.7.RELEASE.jar commons-logging-1.2.jar jna-3.0.9.jar fon
+ tbox-2.0.19.jar commons-csv-1.7.jar spring-expression-5.2.6.RELEASE.jar
+  im4java-1.4.0.jar saaj-impl-1.5.2.jar bcpkix-jdk15on-1.62.jar spring-o
+ xm-5.2.6.RELEASE.jar jackson-core-2.11.0.jar jackson-annotations-2.11.0
+ .jar jul-to-slf4j-1.7.30.jar spring-boot-starter-json-2.3.0.RELEASE.jar
+  jakarta.xml.bind-api-2.3.3.jar jackson-datatype-jsr310-2.11.0.jar xml-
+ apis-1.3.04.jar spring-xml-3.0.9.RELEASE.jar jna-platform-5.4.0.jar log
+ back-classic-1.2.3.jar log4j-to-slf4j-2.13.2.jar jstl-1.2.jar jboss-vfs
+ -3.2.15.Final.jar commons-beanutils-1.9.2.jar jna-5.5.0.jar pdfbox-2.0.
+ 19.jar jcl-over-slf4j-1.7.30.jar jai-imageio-core-1.4.0.jar spring-boot
+ -devtools-2.3.0.RELEASE.jar commons-lang3-3.10.jar jackson-datatype-jdk
+ 8-2.11.0.jar jackson-databind-2.11.0.jar metadata-extractor-2.14.0.jar 
+ jna-4.1.0.jar jmagick-6.6.9.jar spring-boot-starter-web-2.3.0.RELEASE.j
+ ar bcprov-jdk15on-1.62.jar spring-boot-2.3.1.RELEASE.jar jakarta.xml.so
+ ap-api-1.4.2.jar jackson-module-parameter-names-2.11.0.jar lept4j-1.13.
+ 0.jar jakarta.annotation-api-1.3.5.jar jna-platform-5.4.0.jar logback-c
+ ore-1.2.3.jar slf4j-simple-1.7.30.jar commons-io-2.6.jar tabula-1.0.3.j
+ ar spring-boot-starter-2.3.0.RELEASE.jar spring-web-5.2.6.RELEASE.jar s
+ tax-ex-1.8.3.jar jakarta.activation-1.2.2.jar tess4j-4.5.1.jar ghost4j-
+ 1.0.1.jar spring-boot-starter-logging-2.3.0.RELEASE.jar spring-boot-aut
+ oconfigure-2.3.0.RELEASE.jar jai-imageio-jpeg2000-1.3.0.jar spring-jcl-
+ 5.2.6.RELEASE.jar itext-2.1.7.jar spring-aop-5.2.6.RELEASE.jar commons-
+ collections-3.2.1.jar ecj-3.18.0.jar commons-beanutils-1.9.2.jar common
+ s-collections-3.2.1.jar commons-io-2.6.jar commons-logging-1.2.jar font
+ box-2.0.18.jar ghost4j-1.0.1.jar itext-2.1.7.jar jai-imageio-core-1.4.0
+ .jar jbig2-imageio-3.0.3.jar jboss-logging-3.1.4.GA.jar jboss-vfs-3.2.1
+ 5.Final.jar jcl-over-slf4j-1.7.30.jar jna-5.5.0.jar jul-to-slf4j-1.7.30
+ .jar lept4j-1.13.0.jar log4j-1.2.17.jar log4j-over-slf4j-1.7.30.jar log
+ back-classic-1.2.3.jar logback-core-1.2.3.jar pdfbox-2.0.18.jar pdfbox-
+ debugger-2.0.18.jar pdfbox-tools-2.0.18.jar slf4j-api-1.7.25.jar tess4j
+ -4.5.1.jar xmlgraphics-commons-1.4.jar pdfbox-tools-2.0.18.jar log4j-ap
+ i-2.13.2.jar tomcat-embed-core-9.0.35.jar pdfbox-debugger-2.0.18.jar ja
+ karta.jws-api-2.1.0.jar gson-2.8.6.jar tabula-1.0.3.jar opencv-342.jar 
+ jna-3.0.9.jar jna-5.5.0.jar snakeyaml-1.26.jar spring-ws-core-3.0.9.REL
+ EASE.jar tomcat-embed-el-9.0.35.jar slf4j-api-1.7.30.jar jakarta.xml.ws
+ -api-2.3.3.jar tomcat-embed-jasper-9.0.35.jar spring-beans-5.2.6.RELEAS
+ E.jar
+

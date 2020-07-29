@@ -6,14 +6,14 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="TesseractWithCoordinates" />
         <module name="TestTesseract" />
+        <module name="TesseractWithCoordinates" />
       </profile>
     </annotationProcessing>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="TesseractWithCoordinates" options="-parameters" />
+      <module name="TesseractWithCoordinates" options="" />
       <module name="TestTesseract" options="-parameters" />
     </option>
   </component>

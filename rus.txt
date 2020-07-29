@@ -1,0 +1,9 @@
+configs
+eng.traineddata
+eng.user-patterns
+eng.user-words
+osd.traineddata
+pdf.ttf
+rus.traineddata
+ScrollView.jar
+tessconfigs

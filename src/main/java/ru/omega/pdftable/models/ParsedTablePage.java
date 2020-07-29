@@ -1,11 +1,10 @@
 package ru.omega.pdftable.models;
 
-import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.commons.text.StringEscapeUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Parsed page model.
@@ -30,9 +29,8 @@ public class ParsedTablePage {
 
         @Override
         public String toString() {
-            List<String> escapedCells = cells.stream().map(c -> StringEscapeUtils.escapeJava(c)).collect(Collectors.toList());
             return String.format("<%s@%s; cells:%s>",
-                    this.getClass().getSimpleName(), System.identityHashCode(this), Arrays.toString(escapedCells.toArray()));
+                    this.getClass().getSimpleName(), System.identityHashCode(this), Arrays.toString(cells.stream().map(StringEscapeUtils::escapeJava).toArray()));
         }
     }
 
